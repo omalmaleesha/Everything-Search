@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import cmd
 import os
 import sys
 import time
@@ -79,11 +80,19 @@ def main():
 
         if cmd.startswith("search "):
             query = cmd.split(" ", 1)[1]
+
+            t0 = time.perf_counter()
             results = prefix_search(prefix_index, query)
-        
+            t1 = time.perf_counter()
+            elapsed = t1 - t0
+
         elif cmd.startswith("substr "):
             query = cmd.split(" ", 1)[1]
+
+            t0 = time.perf_counter()
             results = substring_search(all_files, query)
+            t1 = time.perf_counter()
+            elapsed = t1 - t0
         
         else:
             print("Unknown command")
@@ -93,7 +102,7 @@ def main():
             print("No matches found.\n")
             continue
 
-        print(f"Found {len(results)} result(s):")
+        print(f"Found {len(results)} result(s) in {elapsed:.10f} seconds:")
         for name, path in results:
             print(path)
         print()
