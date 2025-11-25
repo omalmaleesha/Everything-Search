@@ -4,62 +4,67 @@ import time
 import psutil
 from bisect import bisect_left, bisect_right
 from pathlib import Path
+from array import array
 
-# Build index into RAM (low memory mode)
-
+# Build index into RAM (low memory + fast)
 def scan_folder(root: Path):
-    all_paths = []
-    #in first attemp i use (file name,file path) elements like this but its gets more 
-    #memroy when storing so now i only store file path.
     print(f"Indexing: {root}")
 
     start = time.time()
+
+    all_paths = []
+    file_names = []           # only lowercase names
+    offsets = array('I')      # map original index → sorted index later
+
+    # Scan all files
     for dirpath, _, filenames in os.walk(root):
         for f in filenames:
-            full_path = os.path.join(dirpath, f)
-            all_paths.append(full_path)
+            full = os.path.join(dirpath, f)
+            all_paths.append(full)
+            file_names.append(f.lower())
 
-    # Build prefix index by sorting paths using filename as key
-    prefix_index = sorted(all_paths, key=lambda p: os.path.basename(p).lower())
+    # Sort by name, but keep indices only
+    sorted_idx = sorted(range(len(file_names)), key=lambda i: file_names[i])
+
+    # Build list of sorted names (NO slicing during search)
+    sorted_names = [file_names[i] for i in sorted_idx]
 
     elapsed = time.time() - start
     print(f"Indexed {len(all_paths)} files in {elapsed:.2f}s")
-    ram_mb = get_ram_usage_mb()
-    print(f"Memory Usage: {ram_mb:.2f} MB")
-    return all_paths, prefix_index
+    print(f"Memory Usage: {get_ram_usage_mb():.2f} MB")
+
+    return all_paths, file_names, sorted_idx, sorted_names
 
 
-# Prefix search (using bisect on sorted keys)
-
-def prefix_search(prefix_index, query, limit=50):
+# Prefix search
+def prefix_search(all_paths, file_names, sorted_idx, sorted_names, query, limit=50):
     q = query.lower()
 
-    # Extract just the sorted names once
-    keys = [os.path.basename(p).lower() for p in prefix_index]
+    # Binary search on sorted names
+    lo = bisect_left(sorted_names, q)
+    hi = bisect_right(sorted_names, q + "\uffff")
 
-    lo = bisect_left(keys, q)
-    hi = bisect_right(keys, q + "\uffff")
+    results = []
 
-    results = prefix_index[lo:hi]
-    return results[:limit]
+    for si in sorted_idx[lo:hi][:limit]:
+        results.append(all_paths[si])
+
+    return results
 
 
-# Substring search (scan all paths)
-
-def substring_search(all_paths, query, limit=50):
+# Substring search
+def substring_search(all_paths, file_names, query, limit=50):
     q = query.lower()
     results = []
 
-    for path in all_paths:
-        name = os.path.basename(path).lower()
+    for i, name in enumerate(file_names):
         if q in name:
-            results.append(path)
+            results.append(all_paths[i])
             if len(results) >= limit:
                 break
 
     return results
 
-#get ram usage and show it
 
 def get_ram_usage_mb():
     process = psutil.Process(os.getpid())
@@ -67,62 +72,54 @@ def get_ram_usage_mb():
     return mem_bytes / (1024 * 1024)
 
 
-
-# Main CLI
-
-# Main CLI
-
 def main():
     if len(sys.argv) < 2:
-        print("\033[32mUsage: python fast_search.py <folder_path>\033[0m")
+        print("Usage: python fast_search.py <folder_path>")
         return
 
     root = Path(sys.argv[1])
     if not root.exists():
-        print(f"\033[32mFolder does not exist: {root}\033[0m")
+        print("Folder does not exist:", root)
         return
 
-    # Build in-memory index
-    all_paths, prefix_index = scan_folder(root)
+    all_paths, file_names, sorted_idx, sorted_names = scan_folder(root)
 
-    print("\033[32m\nReady! Type your search:")
+    print("\nReady! Type your search:")
     print("  search <text>    -> prefix search")
     print("  substr <text>    -> substring search")
-    print("  exit             -> quit\n\033[0m")
+    print("  exit             -> quit\n")
 
     while True:
-        cmd = input("\033[32m> \033[0m").strip()
+        cmd = input("> ").strip()
         if cmd in ("exit", "quit", "q"):
-            print("\033[32mGoodbye!\033[0m")
+            print("Goodbye!")
             break
 
         if cmd.startswith("search "):
             query = cmd.split(" ", 1)[1]
-
             t0 = time.perf_counter()
-            results = prefix_search(prefix_index, query)
+            results = prefix_search(all_paths, file_names, sorted_idx, sorted_names, query)
             t1 = time.perf_counter()
-            elapsed = t1 - t0
 
         elif cmd.startswith("substr "):
             query = cmd.split(" ", 1)[1]
-
             t0 = time.perf_counter()
-            results = substring_search(all_paths, query)
+            results = substring_search(all_paths, file_names, query)
             t1 = time.perf_counter()
-            elapsed = t1 - t0
 
         else:
-            print("\033[32mUnknown command\033[0m")
+            print("Unknown command")
             continue
+
+        elapsed = t1 - t0
 
         if not results:
-            print("\033[32mNo matches found.\n\033[0m")
+            print("No matches.\n")
             continue
 
-        print(f"\033[32mFound {len(results)} result(s) in {elapsed:.10f} seconds:\033[0m")
-        for path in results:
-            print(f"\033[32m{path}\033[0m")
+        print(f"Found {len(results)} in {elapsed:.10f} seconds:")
+        for p in results:
+            print(p)
         print()
 
 
