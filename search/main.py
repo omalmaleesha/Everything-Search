@@ -1,8 +1,7 @@
-#!/usr/bin/env python3
-
 import os
 import sys
 import time
+import psutil
 from bisect import bisect_left, bisect_right
 from pathlib import Path
 
@@ -10,6 +9,8 @@ from pathlib import Path
 
 def scan_folder(root: Path):
     all_paths = []
+    #in first attemp i use (file name,file path) elements like this but its gets more 
+    #memroy when storing so now i only store file path.
     print(f"Indexing: {root}")
 
     start = time.time()
@@ -23,6 +24,8 @@ def scan_folder(root: Path):
 
     elapsed = time.time() - start
     print(f"Indexed {len(all_paths)} files in {elapsed:.2f}s")
+    ram_mb = get_ram_usage_mb()
+    print(f"Memory Usage: {ram_mb:.2f} MB")
     return all_paths, prefix_index
 
 
@@ -55,6 +58,14 @@ def substring_search(all_paths, query, limit=50):
                 break
 
     return results
+
+#get ram usage and show it
+
+def get_ram_usage_mb():
+    process = psutil.Process(os.getpid())
+    mem_bytes = process.memory_info().rss
+    return mem_bytes / (1024 * 1024)
+
 
 
 # Main CLI
