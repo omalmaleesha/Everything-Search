@@ -8,124 +8,114 @@ import sys
 # TEST 1: scan_folder()
 # ---------------------------------------------------------
 # Purpose:
-#   Ensure scan_folder() correctly scans directories, collects files,
-#   converts filenames to lowercase, and returns (all_files, prefix_index).
-#
-# Input:
-#   tmp_path → a temporary directory created by pytest.
-#
-# Output:
-#   all_files → list of (lowercase_filename, full_path)
-#   prefix_index → sorted list based on lowercase filenames
+#   Verify that scan_folder() scans all files recursively and returns:
+#     - all_paths      → list of full file paths
+#     - file_names     → list of lowercase names (1:1 with all_paths)
+#     - sorted_idx     → index list sorted by lowercase names
+#     - sorted_names   → sorted lowercase names
 #
 # What it checks:
-#   - All files in the folder are detected.
-#   - Filenames are converted to lowercase.
-#   - Files in subfolders are also detected.
+#   - All files detected (including in subfolders)
+#   - Lowercase naming
+#   - Sorted index matches sorted filenames
 # ---------------------------------------------------------
 def test_scan_folder(tmp_path):
-    # Create sample files to simulate a real folder
-    (tmp_path / "test1.txt").write_text("hello")
-    (tmp_path / "Test2.md").write_text("world")   # Mixed case on purpose
+    # Create sample files
+    f1 = tmp_path / "Test1.TXT"
+    f1.write_text("hello")
+
+    f2 = tmp_path / "hello.md"
+    f2.write_text("world")
+
     sub = tmp_path / "sub"
     sub.mkdir()
-    (sub / "index.html").write_text("<html>")
+    f3 = sub / "index.HTML"
+    f3.write_text("<html>")
 
-    # Run the scanning function
-    all_files, prefix_index = scan_folder(tmp_path)
+    all_paths, file_names, sorted_idx, sorted_names = scan_folder(tmp_path)
 
-    # There should be 3 files total
-    assert len(all_files) == 3
-    assert len(prefix_index) == 3
+    # There should be 3 files
+    assert len(all_paths) == 3
+    assert len(file_names) == 3
+    assert len(sorted_idx) == 3
+    assert len(sorted_names) == 3
 
-    # Extract only the lowercase filenames returned
-    names = [name for name, path in all_files]
+    # Ensure lowercase normalization
+    assert "test1.txt" in file_names
+    assert "hello.md" in file_names
+    assert "index.html" in file_names
 
-    # Ensure filenames are normalized to lowercase
-    assert "test1.txt" in names
-    assert "test2.md" in names
-    assert "index.html" in names
+    # Ensure sorted order accuracy
+    assert sorted_names == sorted(file_names)
 
 
 # ---------------------------------------------------------
 # TEST 2: prefix_search()
 # ---------------------------------------------------------
 # Purpose:
-#   Test that prefix_search() returns files whose names START
-#   with the given prefix.
-#
-# Input:
-#   A small in-memory list representing the prefix index.
-#
-# Output:
-#   A filtered list of matching results.
+#   Validate prefix_search() correctly returns paths whose
+#   lowercase basename STARTS WITH query.
 #
 # What it checks:
-#   - Only items whose names start with "app" are returned.
-#   - Results are in sorted order.
+#   - Only filenames starting with "app"
+#   - Returned paths correspond to sorted order
 # ---------------------------------------------------------
-def test_prefix_search():
-    data = [
-        ("apple.txt", "/fake/apple.txt"),
-        ("application.doc", "/fake/application.doc"),
-        ("banana.txt", "/fake/banana.txt"),
-    ]
-    prefix_index = sorted(data, key=lambda x: x[0])
+def test_prefix_search(tmp_path):
+    # Build fake directory structure
+    p1 = tmp_path / "apple.txt"
+    p2 = tmp_path / "application.doc"
+    p3 = tmp_path / "banana.txt"
 
-    # Search for prefix "app"
-    results = prefix_search(prefix_index, "app")
+    p1.write_text("A")
+    p2.write_text("B")
+    p3.write_text("C")
 
-    assert len(results) == 2                      # Only two items start with "app"
-    assert results[0][0] == "apple.txt"
-    assert results[1][0] == "application.doc"
+    all_paths, file_names, sorted_idx, sorted_names = scan_folder(tmp_path)
+
+    results = prefix_search(all_paths, file_names, sorted_idx, sorted_names, "app")
+
+    # Only two match
+    assert len(results) == 2
+
+    # Results must be correct files
+    basenames = [Path(p).name for p in results]
+    assert basenames == ["apple.txt", "application.doc"]
 
 
 # ---------------------------------------------------------
 # TEST 3: substring_search()
 # ---------------------------------------------------------
 # Purpose:
-#   Ensure substring_search() returns files whose names CONTAIN
+#   Verify substring_search() finds filenames containing
 #   the search term anywhere.
 #
-# Input:
-#   In-memory list of filenames.
-#
-# Output:
-#   List of matching file entries.
-#
 # What it checks:
-#   - Files containing "index" anywhere in the name are found.
-#   - Order is based on position in the array.
+#   - Matching sources
+#   - Order follows scanning order
 # ---------------------------------------------------------
-def test_substring_search():
-    data = [
-        ("movie_index.mp4", "/fake/movie_index.mp4"),
-        ("myfile.txt", "/fake/myfile.txt"),
-        ("index_backup.zip", "/fake/index_backup.zip"),
-    ]
+def test_substring_search(tmp_path):
+    p1 = tmp_path / "my_index_video.mp4"
+    p2 = tmp_path / "notes.txt"
+    p3 = tmp_path / "index_backup.zip"
 
-    results = substring_search(data, "index")
+    p1.write_text("x")
+    p2.write_text("x")
+    p3.write_text("x")
 
-    assert len(results) == 2                      # Two files contain "index"
-    assert results[0][0] == "movie_index.mp4"
-    assert results[1][0] == "index_backup.zip"
+    all_paths, file_names, sorted_idx, sorted_names = scan_folder(tmp_path)
+
+    results = substring_search(all_paths, file_names, "index")
+
+    assert len(results) == 2
+
+    names = sorted([Path(p).name for p in results])
+
+    assert names == ["index_backup.zip", "my_index_video.mp4"]
+
 
 
 # ---------------------------------------------------------
 # TEST 4: CLI – invalid path
-# ---------------------------------------------------------
-# Purpose:
-#   Ensure running the CLI with a non-existing folder prints
-#   the correct error message.
-#
-# Input:
-#   Running `python main.py Z:/does/not/exist`
-#
-# Output:
-#   Printed message containing "Folder does not exist".
-#
-# What it checks:
-#   - The script handles missing folders safely.
 # ---------------------------------------------------------
 def test_cli_invalid_path():
     result = subprocess.run(
@@ -138,29 +128,10 @@ def test_cli_invalid_path():
 
 
 # ---------------------------------------------------------
-# TEST 5: CLI – start and exit
-# ---------------------------------------------------------
-# Purpose:
-#   Test the full CLI boot-up flow:
-#   1. Script starts
-#   2. Folder is indexed
-#   3. CLI waits for input
-#   4. User types "exit"
-#   5. Script terminates gracefully
-#
-# Input:
-#   - Temporary folder path
-#   - Program input: "exit\n"
-#
-# Output:
-#   Lines printed by the program.
-#
-# What it checks:
-#   - Startup indexing message appears
-#   - Help instructions appear
-#   - "Goodbye!" appears when exiting
+# TEST 5: CLI – start + exit cleanly
 # ---------------------------------------------------------
 def test_cli_start_and_exit(tmp_path):
+    # Feed "exit" into the program
     result = subprocess.run(
         [sys.executable, "main.py", str(tmp_path)],
         input="exit\n",
