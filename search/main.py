@@ -70,28 +70,30 @@ def get_ram_usage_mb():
 
 # Main CLI
 
+# Main CLI
+
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python fast_search.py <folder_path>")
+        print("\033[32mUsage: python fast_search.py <folder_path>\033[0m")
         return
 
     root = Path(sys.argv[1])
     if not root.exists():
-        print("Folder does not exist:", root)
+        print(f"\033[32mFolder does not exist: {root}\033[0m")
         return
 
     # Build in-memory index
     all_paths, prefix_index = scan_folder(root)
 
-    print("\nReady! Type your search:")
+    print("\033[32m\nReady! Type your search:")
     print("  search <text>    -> prefix search")
     print("  substr <text>    -> substring search")
-    print("  exit             -> quit\n")
+    print("  exit             -> quit\n\033[0m")
 
     while True:
-        cmd = input("> ").strip()
+        cmd = input("\033[32m> \033[0m").strip()
         if cmd in ("exit", "quit", "q"):
-            print("Goodbye!")
+            print("\033[32mGoodbye!\033[0m")
             break
 
         if cmd.startswith("search "):
@@ -111,17 +113,18 @@ def main():
             elapsed = t1 - t0
 
         else:
-            print("Unknown command")
+            print("\033[32mUnknown command\033[0m")
             continue
 
         if not results:
-            print("No matches found.\n")
+            print("\033[32mNo matches found.\n\033[0m")
             continue
 
-        print(f"Found {len(results)} result(s) in {elapsed:.10f} seconds:")
+        print(f"\033[32mFound {len(results)} result(s) in {elapsed:.10f} seconds:\033[0m")
         for path in results:
-            print(path)
+            print(f"\033[32m{path}\033[0m")
         print()
+
 
 if __name__ == "__main__":
     main()
