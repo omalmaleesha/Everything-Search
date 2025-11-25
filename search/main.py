@@ -1,54 +1,59 @@
 #!/usr/bin/env python3
 
-import cmd
 import os
 import sys
 import time
 from bisect import bisect_left, bisect_right
 from pathlib import Path
 
-# Build index into RAM
+# Build index into RAM (low memory mode)
 
 def scan_folder(root: Path):
-    all_files = []
+    all_paths = []
     print(f"Indexing: {root}")
 
     start = time.time()
     for dirpath, _, filenames in os.walk(root):
         for f in filenames:
-            f_low = f.lower()
-            full = os.path.join(dirpath, f)
-            all_files.append((f_low, full))
-    
-    # Prefix index: sorted list
-    prefix_index = sorted(all_files, key=lambda x: x[0])
+            full_path = os.path.join(dirpath, f)
+            all_paths.append(full_path)
+
+    # Build prefix index by sorting paths using filename as key
+    prefix_index = sorted(all_paths, key=lambda p: os.path.basename(p).lower())
 
     elapsed = time.time() - start
-    print(f"Indexed {len(all_files)} files in {elapsed:.2f}s")
-    return all_files, prefix_index
+    print(f"Indexed {len(all_paths)} files in {elapsed:.2f}s")
+    return all_paths, prefix_index
 
 
-# Prefix search (very fast with bisect)
+# Prefix search (using bisect on sorted keys)
 
 def prefix_search(prefix_index, query, limit=50):
     q = query.lower()
-    keys = [x[0] for x in prefix_index]
+
+    # Extract just the sorted names once
+    keys = [os.path.basename(p).lower() for p in prefix_index]
 
     lo = bisect_left(keys, q)
     hi = bisect_right(keys, q + "\uffff")
 
-    return prefix_index[lo:hi][:limit]
+    results = prefix_index[lo:hi]
+    return results[:limit]
 
-# Substring search (fast because in RAM)
 
-def substring_search(all_files, query, limit=50):
+# Substring search (scan all paths)
+
+def substring_search(all_paths, query, limit=50):
     q = query.lower()
     results = []
-    for name, path in all_files:
+
+    for path in all_paths:
+        name = os.path.basename(path).lower()
         if q in name:
-            results.append((name, path))
+            results.append(path)
             if len(results) >= limit:
                 break
+
     return results
 
 
@@ -65,7 +70,7 @@ def main():
         return
 
     # Build in-memory index
-    all_files, prefix_index = scan_folder(root)
+    all_paths, prefix_index = scan_folder(root)
 
     print("\nReady! Type your search:")
     print("  search <text>    -> prefix search")
@@ -90,10 +95,10 @@ def main():
             query = cmd.split(" ", 1)[1]
 
             t0 = time.perf_counter()
-            results = substring_search(all_files, query)
+            results = substring_search(all_paths, query)
             t1 = time.perf_counter()
             elapsed = t1 - t0
-        
+
         else:
             print("Unknown command")
             continue
@@ -103,12 +108,9 @@ def main():
             continue
 
         print(f"Found {len(results)} result(s) in {elapsed:.10f} seconds:")
-        for name, path in results:
+        for path in results:
             print(path)
         print()
-
-    # When program closes → RAM cleared automatically
-
 
 if __name__ == "__main__":
     main()
