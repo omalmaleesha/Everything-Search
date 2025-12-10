@@ -1,23 +1,21 @@
 import os
 import sys
 import time
-import psutil
+import pickle
 from bisect import bisect_left, bisect_right
 from pathlib import Path
-import subprocess
 
-# ----------------------------
-# Scan folder and build index using os.scandir
-# ----------------------------
+INDEX_FILE = "hdd_index.pkl"
+
 def scan_folder(root: Path):
-    print(f"Indexing: {root}")
+    print(f"Indexing HDD folder: {root}")
     start = time.time()
 
-    entries = []  # store (lower_name, full_path)
+    entries = []
     append = entries.append
     lower = str.lower
+    stack = [root]
 
-    stack = [root]  # stack for directories
     while stack:
         current_dir = stack.pop()
         try:
@@ -28,25 +26,27 @@ def scan_folder(root: Path):
                     elif entry.is_file(follow_symlinks=False):
                         append((lower(entry.name), entry.path))
         except PermissionError:
-            # Skip folders without permissions
             continue
 
-    # Sort entries by lowercase name
     entries.sort(key=lambda x: x[0])
-
     names = [e[0] for e in entries]
     paths = [e[1] for e in entries]
 
-    elapsed = time.time() - start
-    print(f"Indexed {len(paths)} files in {elapsed:.2f}s")
-    print(f"Memory Usage: {get_ram_usage_mb():.2f} MB")
+    # Save index to file for faster reload next time
+    with open(INDEX_FILE, "wb") as f:
+        pickle.dump((names, paths), f)
 
+    print(f"Indexed {len(paths)} files in {time.time() - start:.2f}s")
     return names, paths
 
 
-# ----------------------------
-# Prefix search using bisect
-# ----------------------------
+def load_index():
+    if os.path.exists(INDEX_FILE):
+        with open(INDEX_FILE, "rb") as f:
+            return pickle.load(f)
+    return None, None
+
+
 def prefix_search(names, paths, query, limit=50):
     q = query.lower()
     lo = bisect_left(names, q)
@@ -54,57 +54,30 @@ def prefix_search(names, paths, query, limit=50):
     return paths[lo:hi][:limit]
 
 
-# ----------------------------
-# Substring search (linear)
-# ----------------------------
 def substring_search(names, paths, query, limit=50):
     q = query.lower()
     results = []
-    append = results.append
     for n, p in zip(names, paths):
         if q in n:
-            append(p)
+            results.append(p)
             if len(results) >= limit:
                 break
     return results
 
 
-# ----------------------------
-# RAM usage helper
-# ----------------------------
-def get_ram_usage_mb():
-    process = psutil.Process(os.getpid())
-    return process.memory_info().rss / (1024 * 1024)
-
-
-# ----------------------------
-# Main CLI
-# ----------------------------
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python fast_search.py <folder_path>")
+        print("Usage: python hdd_search.py <folder_path>")
         return
 
     root = Path(sys.argv[1])
-    if not root.exists():
-        print("Folder does not exist:", root)
-        return
 
-     # Ask user whether search is on SSD or HDD
-    while True:
-        drive_type = input("Are you searching on SSD or HDD? (type SSD/HDD): ").strip().upper()
-        if drive_type in ("SSD", "HDD"):
-            print(f"Drive type selected: {drive_type}")
-            break
-        else:
-            print("Invalid input. Please type SSD or HDD.")
-
-    # Call the appropriate search script
-    if drive_type == "HDD":
-        # Run hdd_search.py in the same directory
-        subprocess.run([sys.executable, "hdd_search.py", str(root)])
-
-    names, paths = scan_folder(root)
+    # Try to load saved index for HDD
+    names, paths = load_index()
+    if names is None or paths is None:
+        names, paths = scan_folder(root)
+    else:
+        print(f"Loaded saved HDD index with {len(paths)} files")
 
     print("\nReady! Type your search:")
     print("  search <text>    -> prefix search")
@@ -119,25 +92,19 @@ def main():
 
         if cmd.startswith("search "):
             query = cmd.split(" ", 1)[1]
-            t0 = time.perf_counter()
             results = prefix_search(names, paths, query)
-            t1 = time.perf_counter()
-
         elif cmd.startswith("substr "):
             query = cmd.split(" ", 1)[1]
-            t0 = time.perf_counter()
             results = substring_search(names, paths, query)
-            t1 = time.perf_counter()
         else:
             print("Unknown command")
             continue
 
-        elapsed = t1 - t0
         if not results:
             print("No matches.\n")
             continue
 
-        print(f"Found {len(results)} in {elapsed:.6f} seconds:")
+        print(f"Found {len(results)} results:")
         for p in results:
             print(p)
         print()
