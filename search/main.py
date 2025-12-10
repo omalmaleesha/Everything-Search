@@ -6,7 +6,7 @@ from bisect import bisect_left, bisect_right
 from pathlib import Path
 
 # ----------------------------
-# Scan folder and build index
+# Scan folder and build index using os.scandir
 # ----------------------------
 def scan_folder(root: Path):
     print(f"Indexing: {root}")
@@ -14,12 +14,21 @@ def scan_folder(root: Path):
 
     entries = []  # store (lower_name, full_path)
     append = entries.append
-    join = os.path.join
     lower = str.lower
 
-    for dirpath, _, filenames in os.walk(root):
-        for f in filenames:
-            append((lower(f), join(dirpath, f)))
+    stack = [root]  # stack for directories
+    while stack:
+        current_dir = stack.pop()
+        try:
+            with os.scandir(current_dir) as it:
+                for entry in it:
+                    if entry.is_dir(follow_symlinks=False):
+                        stack.append(entry.path)
+                    elif entry.is_file(follow_symlinks=False):
+                        append((lower(entry.name), entry.path))
+        except PermissionError:
+            # Skip folders without permissions
+            continue
 
     # Sort entries by lowercase name
     entries.sort(key=lambda x: x[0])
